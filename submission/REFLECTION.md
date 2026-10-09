@@ -59,6 +59,18 @@ cặp chỉ hơn ngẫu nhiên khoảng 0,21; reward của cả chosen và rejec
 câu trả lời hơn tham chiếu SFT, chưa phân biệt rõ. Với lr 5e-6, 100 bước và 800 cặp, DPO hầu như không dịch chuyển mô hình,
 điều này giải thích vì sao ở §4 hai mô hình gần như không khác nhau.
 
+**Vì sao margin tăng được dù log-xác suất của chosen giảm (câu hỏi NB0).** Loss DPO chỉ phụ thuộc vào *hiệu* `β·[(log π(chosen) − log π_ref(chosen)) − (log π(rejected) − log π_ref(rejected))]`,
+không phụ thuộc giá trị tuyệt đối của từng vế. Ở thí nghiệm NB0 (β=0,1, tham chiếu −20 và −22), kịch bản A (chosen tăng, rejected giảm) và kịch bản B (chosen giảm tới −3,0, rejected giảm
+nhanh hơn tới −5,0) cho **cùng loss 0,127** vì cùng margin +2,0. Tức là DPO không phân biệt được "đẩy chosen lên" với "đẩy rejected xuống nhanh hơn": xác suất bị
+dồn đi nơi khác, và câu chosen cũng có thể bị mất xác suất. Đây chính là likelihood displacement; RPO thêm số hạng NLL trên chosen để phạt trường hợp này (trong NB0, loss RPO của B là 2,427 so với 2,027 của A).
+Ở lần chạy của tôi chẩn đoán là INTENDED (chosen tăng +0,43), nhưng nếu chosen giảm thì loss vẫn có thể giảm như bình thường.
+
+**Vì sao DPO gốc dễ thiên vị độ dài, và SimPO/ORPO xử lý thế nào (câu hỏi cuối NB0).** Log-xác suất của một câu là *tổng* log-prob trên từng token, mỗi token đóng góp một số âm, nên câu dài luôn có
+tổng âm hơn câu ngắn. Khi so chosen với rejected, độ dài làm lệch hiệu log-prob, và nếu chosen thường dài hơn thì mô hình có thể "thắng" chỉ bằng cách sinh câu dài hơn. Dữ liệu của tôi có đúng xu hướng đó:
+chosen dài hơn rejected ở 65,9% cặp (median 94 so với 86 token, NB2). Trong thí nghiệm NB0 với chosen 40 token và rejected 120 token, loss của DPO là 0,513, IPO 24,338, SimPO 1,126 và ORPO 1,278: các biến thể chuẩn hoá theo độ dài
+cho giá trị khác hẳn DPO. SimPO dùng log-prob *trung bình* theo token (chia cho độ dài) và không cần mô hình tham chiếu; ORPO dùng tỉ số odds của log-prob đã chuẩn hoá theo độ dài cộng với loss SFT trên chosen,
+cũng không cần tham chiếu. Trong lần chạy này, ORPO (NB3b) quả thật cho câu trả lời ngắn nhất (372 ký tự so với 392 của DPO), phù hợp với việc nó ít bị kéo về phía câu dài, dù chênh lệch nhỏ.
+
 ---
 
 ## 4. So sánh SFT vs SFT+DPO
