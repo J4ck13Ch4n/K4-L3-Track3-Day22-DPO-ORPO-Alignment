@@ -51,9 +51,7 @@ SMOKE_TOKENS = 160
 hf_answer = MD.generate(model, tokenizer, [SMOKE_PROMPT], max_new_tokens=SMOKE_TOKENS)[0]
 # Render the prompt once with the HF template (thinking off) and feed GGUF the same text,
 # so the HF vs GGUF comparison differs only by quantization, not by chat formatting.
-smoke_text = tokenizer.apply_chat_template(
-    [{"role": "user", "content": SMOKE_PROMPT}], tokenize=False, add_generation_prompt=True, **C.CHAT_TEMPLATE_KWARGS
-)
+smoke_text = MD.chat_text(tokenizer, [{"role": "user", "content": SMOKE_PROMPT}])
 stop_tokens = [tokenizer.eos_token] if tokenizer.eos_token else []
 print(f"HF (SFT+DPO) answer:\n{hf_answer}")
 

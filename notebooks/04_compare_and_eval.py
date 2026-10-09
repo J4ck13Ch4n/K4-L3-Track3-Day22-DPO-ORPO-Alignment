@@ -82,15 +82,11 @@ print(f"{len(FIXED_PROMPTS)} fixed + {len(heldout)} held-out prompts")
 # %%
 texts = [p["prompt"] for p in PROMPTS]
 
-model, tokenizer = MD.load_model(C.SFT_MERGED)
-sft_out = MD.generate(model, tokenizer, texts)
-del model
-MD.cleanup()
-
+# Each pass runs in a child process so the GPU is fully free afterwards (a kernel keeps ~7 GB
+# after `del model`, and the reward models below then no longer fit a T4).
+sft_out = MD.generate_isolated(C.SFT_MERGED, texts)
 # The adapter config points at models/sft-merged, so this loads SFT + DPO.
-model, tokenizer = MD.load_model(DPO_ADAPTER)
-dpo_out = MD.generate(model, tokenizer, texts)
-del model
+dpo_out = MD.generate_isolated(DPO_ADAPTER, texts)
 MD.cleanup()
 
 records = [{**p, "sft": s, "dpo": d} for p, s, d in zip(PROMPTS, sft_out, dpo_out)]
@@ -242,3 +238,42 @@ print(json.dumps(summary, ensure_ascii=False, indent=2))
 # - +4 độ chặt chẽ: chạy thêm giám khảo qua API khác họ (ví dụ `JUDGE_PROVIDER=gemini`) và báo `cross_judge.agreement`.
 #
 # **Tiếp theo:** NB5 (GGUF) hoặc NB6 (benchmark).
+
+# %% [markdown]
+# ## 6. Đóng gói kết quả (lưu ra Google Drive / tải về nộp bài)
+#
+# Nén các artifact cần nộp (`submission/`, `data/eval/`, `adapters/dpo/`, `models/sft-merged/config.json`, `data/pref/`)
+# và tự động sao chép sang Google Drive nếu đang chạy trên Colab.
+
+# %%
+import os
+import shutil
+from pathlib import Path
+
+# 1. Nén các file kết quả
+!zip -r submission_artifacts.zip submission/ data/eval/ adapters/dpo/dpo_metrics.json adapters/dpo/adapter_config.json models/sft-merged/config.json data/pref/
+
+# 2. Tự động lưu sang Google Drive (Google Colab)
+try:
+    if not Path("/content/drive").exists():
+        from google.colab import drive
+        drive.mount("/content/drive")
+    drive_out = Path("/content/drive/MyDrive/lab22_output")
+    drive_out.mkdir(parents=True, exist_ok=True)
+    if Path("submission_artifacts.zip").exists():
+        shutil.copy("submission_artifacts.zip", drive_out / "submission_artifacts.zip")
+        print(f"✓ Đã lưu bản sao vào Google Drive: {drive_out / 'submission_artifacts.zip'}")
+except Exception as e:
+    print(f"Bỏ qua sao chép Google Drive: {e}")
+
+# 3. Sao chép ra /kaggle/working/ nếu đang chạy trên Kaggle
+if Path("/kaggle/working").exists() and Path("submission_artifacts.zip").exists():
+    shutil.copy("submission_artifacts.zip", "/kaggle/working/submission_artifacts.zip")
+    print("✓ Đã sao chép submission_artifacts.zip ra /kaggle/working/ (tải ở bảng Output bên phải)")
+
+# 4. Tải trực tiếp về trình duyệt (Colab)
+try:
+    from google.colab import files
+    files.download("submission_artifacts.zip")
+except Exception:
+    pass

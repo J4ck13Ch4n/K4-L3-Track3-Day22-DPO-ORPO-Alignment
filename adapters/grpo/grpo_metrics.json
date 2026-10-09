@@ -1,0 +1,9 @@
+{
+  "dataset": "vuongtsc/vi-gsm8k-agentic",
+  "n_test": 100,
+  "steps": 60,
+  "num_generations": 4,
+  "acc_before": 0.49,
+  "acc_after": 0.5,
+  "_note": "Copied from the printed output of colab/lab22-kaggle-run2.ipynb."
+}

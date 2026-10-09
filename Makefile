@@ -28,7 +28,7 @@ help: ## Show this help
 # ─────────────────────────────────────────────────────────────
 
 setup: ## Auto-detect Colab vs laptop, install deps + smoke check
-	@if [ -d /content ]; then \
+	@if [ -d /content ] || [ -d /kaggle ]; then \
 	  bash setup-colab.sh; \
 	else \
 	  bash setup-laptop.sh; \

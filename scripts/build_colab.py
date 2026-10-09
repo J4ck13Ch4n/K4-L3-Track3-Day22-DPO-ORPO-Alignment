@@ -109,26 +109,39 @@ def render(tier: str) -> dict:
         code(
             "import os\n"
             f'os.environ["COMPUTE_TIER"] = "{tier}"\n'
+            'os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Ghim 1 GPU (cho Kaggle T4x2 / multi-GPU) de Unsloth khong loi\n'
+            "# Bat dong nay neu muon mount Google Drive ngay tu dau de luu artifact:\n"
+            '# from google.colab import drive; drive.mount("/content/drive")\n'
             "# NB4 judges automatically with a panel of two local reward models (no key needed).\n"
             "# Optional API judge as a cross-check (two A/B orders):\n"
             '# os.environ["JUDGE_PROVIDER"] = "gemini"   # or "openai" / "anthropic"\n'
             '# os.environ["JUDGE_MODEL"] = "<current model id>"\n'
-            '# from google.colab import userdata; os.environ["GEMINI_API_KEY"] = userdata.get("GEMINI_API_KEY")\n'
-            "# Put API keys in Colab secrets, never in the notebook."
+            '# Colab:  from google.colab import userdata; os.environ["GEMINI_API_KEY"] = userdata.get("GEMINI_API_KEY")\n'
+            '# Kaggle: from kaggle_secrets import UserSecretsClient; os.environ["GEMINI_API_KEY"] = UserSecretsClient().get_secret("GEMINI_API_KEY")\n'
+            "# Put API keys in secrets, never hardcode in the notebook."
         ),
         code(f"!pip install -q {pins}" + (' "vllm>=0.10"' if big else "")),
         code(
             "from pathlib import Path\n"
-            f'WORK = Path("{WORKDIR}")\n'
+            "# Auto-detect Colab vs Kaggle vs local\n"
+            'if Path("/kaggle/working").exists():\n'
+            '    WORK = Path("/kaggle/working/lab22")\n'
+            'elif Path("/content").exists():\n'
+            '    WORK = Path("/content/lab22")\n'
+            "else:\n"
+            '    WORK = Path.cwd() / "lab22_run"\n\n'
             '(WORK / "lab22").mkdir(parents=True, exist_ok=True)\n'
+            '(WORK / "scripts").mkdir(parents=True, exist_ok=True)\n'
             "os.chdir(WORK)\n"
-            "print(Path.cwd())"
+            'print(f"Working directory: {Path.cwd()}")'
         ),
         md("### Helper package `lab22/` (same files as the repo)"),
     ]
     for module in sorted((REPO / "lab22").glob("*.py")):
         body = module.read_text(encoding="utf-8")
-        cells.append(code(f"%%writefile {WORKDIR}/lab22/{module.name}\n{body}"))
+        cells.append(code(f"%%writefile lab22/{module.name}\n{body}"))
+    body_verify = (REPO / "scripts" / "verify.py").read_text(encoding="utf-8")
+    cells.append(code(f"%%writefile scripts/verify.py\n{body_verify}"))
     for i, (stem, kind) in enumerate(STAGES):
         if i:
             # One Colab kernel runs every stage, so drop the previous stage's GPU objects.

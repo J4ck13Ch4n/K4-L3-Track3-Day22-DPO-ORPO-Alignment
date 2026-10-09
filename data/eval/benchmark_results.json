@@ -1,0 +1,38 @@
+{
+  "compute_tier": "T4",
+  "dtype": "float16",
+  "chat_template": true,
+  "results": [
+    {
+      "benchmark": "IFEval",
+      "task": "ifeval",
+      "limit_per_subtask": 200,
+      "sft": 0.53,
+      "sft_stderr": 0.035380203419000424,
+      "dpo": 0.52,
+      "dpo_stderr": 0.03541569365103442,
+      "delta": -0.010000000000000009
+    },
+    {
+      "benchmark": "GSM8K",
+      "task": "gsm8k",
+      "limit_per_subtask": 250,
+      "sft": 0.828,
+      "sft_stderr": 0.023915513944486218,
+      "dpo": 0.832,
+      "dpo_stderr": 0.023692813205492574,
+      "delta": 0.0040000000000000036
+    },
+    {
+      "benchmark": "Global-MMLU-vi",
+      "task": "global_mmlu_full_vi",
+      "limit_per_subtask": 10,
+      "sft": 0.24385964912280703,
+      "sft_stderr": 0.017881736668328253,
+      "dpo": 0.24385964912280703,
+      "dpo_stderr": 0.017881736668328253,
+      "delta": 0.0
+    }
+  ],
+  "_note": "Rebuilt from the printed output of notebook colab/lab22-kaggle-run2.ipynb (the Kaggle session was lost before the original file could be downloaded)."
+}

@@ -45,13 +45,23 @@ def add_lora(model, r: int = C.LORA_R, alpha: int = C.LORA_ALPHA):
     )
 
 
+EMPTY_THINK = "<think>\n\n</think>\n\n"
+
+
 def chat_text(tokenizer, messages: list[dict], add_generation_prompt: bool = True) -> str:
-    return tokenizer.apply_chat_template(
+    text = tokenizer.apply_chat_template(
         messages,
         tokenize=False,
         add_generation_prompt=add_generation_prompt,
         **C.CHAT_TEMPLATE_KWARGS,
     )
+    # The Qwen3-Instruct-2507 template writes an empty think block into every training assistant
+    # turn but leaves it out of the generation prompt. A model SFT'd on that text then spends its
+    # first tokens emitting the block itself (seen as stray <tool_call> strings in the output).
+    # Put the block in the prompt so generation matches the training format.
+    if add_generation_prompt and C.CHAT_TEMPLATE_KWARGS.get("enable_thinking") is False and not text.endswith(EMPTY_THINK):
+        text += EMPTY_THINK
+    return text
 
 
 def generate(
@@ -87,6 +97,62 @@ def generate(
     finally:
         tokenizer.padding_side = old_side
     return outputs
+
+
+def generate_isolated(
+    name: str | Path,
+    prompts: list[str],
+    max_new_tokens: int = C.GEN_MAX_NEW_TOKENS,
+    batch_size: int = 8,
+    load_in_4bit: bool = True,
+) -> list[str]:
+    """Load `name`, generate greedily and exit, all in a child process.
+
+    Unsloth/PEFT models stay reachable after `del model` (patched methods and
+    caches hold references), so a notebook kernel kept ~7 GB after two
+    generation passes and the reward models then no longer fitted a T4. A
+    child process hands the whole CUDA context back to the driver on exit.
+    """
+    import json
+    import subprocess
+    import sys
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        job, result = Path(tmp) / "job.json", Path(tmp) / "result.json"
+        job.write_text(
+            json.dumps(
+                {
+                    "name": str(name),
+                    "prompts": prompts,
+                    "max_new_tokens": max_new_tokens,
+                    "batch_size": batch_size,
+                    "load_in_4bit": load_in_4bit,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        proc = subprocess.run(
+            [sys.executable, "-m", "lab22.modeling", str(job), str(result)],
+            cwd=str(C.REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0 or not result.exists():
+            raise RuntimeError(f"generation subprocess failed ({proc.returncode}):\n{proc.stderr[-3000:]}")
+        return json.loads(result.read_text(encoding="utf-8"))
+
+
+def _generate_job(job_path: str, result_path: str) -> None:
+    import json
+
+    import unsloth  # noqa: F401  (must come before transformers/trl)
+
+    job = json.loads(Path(job_path).read_text(encoding="utf-8"))
+    model, tokenizer = load_model(job["name"], load_in_4bit=job["load_in_4bit"])
+    outputs = generate(model, tokenizer, job["prompts"], job["max_new_tokens"], job["batch_size"])
+    Path(result_path).write_text(json.dumps(outputs, ensure_ascii=False), encoding="utf-8")
 
 
 def cleanup() -> None:
@@ -203,3 +269,9 @@ def plot_rewards(train_df, eval_df, title: str, path: Path | None = None):
         path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(path, dpi=120, bbox_inches="tight")
     return fig
+
+
+if __name__ == "__main__":
+    import sys
+
+    _generate_job(sys.argv[1], sys.argv[2])

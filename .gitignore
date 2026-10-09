@@ -49,3 +49,6 @@ hf_cache/
 .idea/
 .vscode/
 *.swp
+
+# Local run artifacts
+colab/*.zip

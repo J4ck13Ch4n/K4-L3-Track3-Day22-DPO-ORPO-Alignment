@@ -281,6 +281,17 @@ def sanity_accuracy(score: Scorer) -> float:
     return sum(score(p, good) > score(p, bad) for p, good, bad in SANITY_PAIRS) / len(SANITY_PAIRS)
 
 
+def _free_gpu() -> None:
+    import gc
+
+    import torch
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+
 def make_rm_scorer(name: str | Path, max_length: int = 4096) -> Scorer:
     """Load a sequence-classification reward model (e.g. Skywork-Reward-V2) on the GPU."""
     import torch
@@ -288,9 +299,25 @@ def make_rm_scorer(name: str | Path, max_length: int = 4096) -> Scorer:
 
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16  # T4: fp16
     tok = AutoTokenizer.from_pretrained(name)
-    rm = AutoModelForSequenceClassification.from_pretrained(
-        name, dtype=dtype, device_map="cuda:0", attn_implementation="sdpa", num_labels=1
-    ).eval()
+    kwargs = {"dtype": dtype, "device_map": "cuda:0", "attn_implementation": "sdpa", "num_labels": 1}
+    _free_gpu()
+    rm = None
+    try:
+        rm = AutoModelForSequenceClassification.from_pretrained(name, **kwargs).eval()
+    except torch.OutOfMemoryError:
+        print(f"OOM loading {name} in 16-bit (GPU still holds an earlier model); retrying in 4-bit.")
+    if rm is None:
+        # A T4 cannot fit a 4B reward model next to a leaked generation model; 4-bit needs ~3 GB.
+        from transformers import BitsAndBytesConfig
+
+        _free_gpu()
+        quant = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=dtype,
+            llm_int8_skip_modules=["score"],  # keep the scalar reward head in 16-bit
+        )
+        rm = AutoModelForSequenceClassification.from_pretrained(name, quantization_config=quant, **kwargs).eval()
 
     def score(prompt: str, answer: str) -> float:
         conv = [{"role": "user", "content": prompt}, {"role": "assistant", "content": answer}]
